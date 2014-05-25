@@ -1,0 +1,17 @@
+Source: trac-timingandestimation
+Section: web
+Priority: optional
+Maintainer: Python Applications Packaging Team <python-apps-team@lists.alioth.debian.org>
+Uploaders: W. Martin Borgert <debacle@debian.org>
+Build-Depends: python-setuptools, cdbs, debhelper (>= 8), python (>= 2.7)
+X-Python-Version: >=2.7
+Standards-Version: 3.9.4
+Homepage: http://www.trac-hacks.org/wiki/TimingAndEstimationPlugin
+
+Package: trac-timingandestimation
+Architecture: all
+Depends: ${python:Depends}, ${misc:Depends}, trac
+Description: Plugin to make Trac support time estimation and tracking with permissions
+ This Trac plugin provides support for Time estimation and tracking,
+ and permissions to view and set those fields
+ See http://trac-hacks.org/wiki/TimingAndEstimationPlugin for details.

@@ -1,0 +1,24 @@
+trac-timingandestimation (1.3.7b+svn13939~aroth~ppa1) trusty; urgency=medium
+
+  * new upstream version 1.3.7b
+
+ -- Andreas Roth <aroth@arsoft-online.com>  Sun, 25 May 2014 19:50:07 +0200
+
+trac-timingandestimation (1.3.0b+svn12491-1~aroth~ppa2~quantal1) quantal; urgency=low
+
+  * fixed build trouble by switching to dh_python2
+
+ -- Andreas Roth <aroth@arsoft-online.com>  Sun, 30 Dec 2012 09:39:46 +0100
+
+trac-timingandestimation (1.3.0b+svn12491-1~aroth~ppa1) quantal; urgency=low
+
+  * new upstream version 1.3.0b
+  * contains several bug fixes
+
+ -- Andreas Roth <aroth@arsoft-online.com>  Sat, 29 Dec 2012 17:53:14 +0100
+
+trac-timingandestimation (1.1.9b+svn10751-1~aroth~ppa1) lucid; urgency=low
+
+  * first package for lucid
+
+ -- Andreas Roth <aroth@arsoft-online.com>  Sun, 09 Oct 2011 21:21:42 +0200
