@@ -1,5 +1,4 @@
 from trac.ticket import ITicketChangeListener, Ticket, ITicketManipulator
-from trac.perm import PermissionCache
 from trac.core import *
 import datetime
 import dbhelper
@@ -9,11 +8,14 @@ def identity(x):
 
 def convertfloat(x):
     "some european countries use , as the decimal separator"
+    if isinstance(x, float) or isinstance(x, int):
+        return x
     x = str(x).strip()
     if len(x) > 0:
         return float(x.replace(',','.'))
     else: 
         return 0.0
+
 
 try:
     import trac.util.datefmt
@@ -23,57 +25,78 @@ except Exception:
 
 
 def save_custom_field_value( db, ticket_id, field, value ):
-    cursor = db.cursor();
-    cursor.execute("SELECT * FROM ticket_custom " 
-                   "WHERE ticket=%s and name=%s", (ticket_id, field))
-    if cursor.fetchone():
-        cursor.execute("UPDATE ticket_custom SET value=%s "
-                       "WHERE ticket=%s AND name=%s",
-                       (value, ticket_id, field))
-    else:
-        cursor.execute("INSERT INTO ticket_custom (ticket,name, "
-                       "value) VALUES(%s,%s,%s)",
-                       (ticket_id, field, value))
+    cursor = db.cursor()
+    cursor.execute("UPDATE ticket_custom SET value=%s "
+                   "WHERE ticket=%s AND name=%s", (value, ticket_id, field))
+
+    try:
+        if cursor.rowcount == 0:
+            cursor.execute("INSERT INTO ticket_custom (ticket,name, "
+                           "value) VALUES(%s,%s,%s)",
+                           (ticket_id, field, value))
+    # MySQLdb is not returning the correct rowcount?
+    except:
+        pass
+
     
-DONTUPDATE = "DONTUPDATE"
+def update_hours_to_floats(db, ticket_id):
+    cursor = db.cursor()
+    cursor.execute("SELECT time, newvalue FROM ticket_change"
+                   " WHERE newvalue like '%,%' AND  ticket=%s AND field='hours'", 
+                   (ticket_id,))
+    data = list(cursor.fetchall())
+    for (time, newvalue) in data:
+        cursor.execute("UPDATE ticket_change SET newvalue=%s "
+                       "WHERE ticket=%s AND time=%s AND field='hours'",
+                       (str(convertfloat(newvalue)), ticket_id, time))
 
-def save_ticket_change( db, ticket_id, author, change_time, field, oldvalue, newvalue, log, dontinsert=False):
-    """tries to save a ticket change, 
- 
-       dontinsert means do not add the change if it didnt already exist 
+def update_totalhours_custom( db, ticket_id):
+    cursor = db.cursor()
+    sumSql = """
+       (SELECT SUM( CASE WHEN newvalue = '' OR newvalue IS NULL THEN 0
+                         ELSE CAST( newvalue AS DECIMAL ) END ) as total 
+          FROM ticket_change
+         WHERE ticket=%s and field='hours')  """
+    cursor.execute("UPDATE ticket_custom SET value="+sumSql+
+                   "WHERE ticket=%s AND name='totalhours'",
+               (ticket_id,ticket_id))
+    try:
+        if cursor.rowcount==0:
+            cursor.execute("INSERT INTO ticket_custom (name, value, ticket) "+
+                           "VALUES('totalhours',"+sumSql+",%s)",
+                           (ticket_id,ticket_id))
+    # MySQLdb is not returning the correct rowcount?
+    except:
+        pass
+
+def insert_totalhours_changes( db, ticket_id):
+    sql = """
+       INSERT INTO ticket_change (ticket, author, time, field, oldvalue, newvalue)
+       SELECT ticket, author, time, 'totalhours',  
+               (SELECT SUM( CASE WHEN newvalue = '' OR newvalue IS NULL THEN 0
+                           ELSE CAST( newvalue AS DECIMAL ) END ) as total
+               FROM ticket_change as guts 
+               WHERE guts.ticket = ticket_change.ticket AND guts.field='hours'
+                 AND guts.time < ticket_change.time
+              ) as oldvalue, 
+              (SELECT SUM( CASE WHEN newvalue = '' OR newvalue IS NULL THEN 0
+                           ELSE CAST( newvalue AS DECIMAL ) END ) as total
+               FROM ticket_change as guts 
+               WHERE guts.ticket = ticket_change.ticket AND guts.field='hours'
+                 AND guts.time <= ticket_change.time
+              ) as newvalue
+          FROM ticket_change
+         WHERE ticket=%s and field='hours'
+           AND NOT EXISTS( SELECT ticket
+                             FROM ticket_change as guts 
+                            WHERE guts.ticket=ticket_change.ticket
+                              AND guts.author=ticket_change.author
+                              AND guts.time=ticket_change.time
+                              AND field='totalhours')
     """
-    if isinstance(change_time, datetime.datetime):
-        change_time = to_timestamp(change_time)
-    cursor = db.cursor();
-    sql = """SELECT * FROM ticket_change  
-             WHERE ticket=%s and author=%s and time=%s and field=%s""" 
-                   
-    cursor.execute(sql, (ticket_id, author, change_time, field))
-    if cursor.fetchone():
-        if oldvalue == DONTUPDATE:
-            cursor.execute("""UPDATE ticket_change  SET  newvalue=%s 
-                       WHERE ticket=%s and author=%s and time=%s and field=%s""",
-                           ( newvalue, ticket_id, author, change_time, field))
+    cursor = db.cursor()
+    cursor.execute(sql, (ticket_id,))
 
-        else:
-            cursor.execute("""UPDATE ticket_change  SET oldvalue=%s, newvalue=%s 
-                       WHERE ticket=%s and author=%s and time=%s and field=%s""",
-                           (oldvalue, newvalue, ticket_id, author, change_time, field))
-    else:
-        if oldvalue == DONTUPDATE:
-            oldvalue = '0'
-        if not dontinsert:
-            cursor.execute("""INSERT INTO ticket_change  (ticket,time,author,field, oldvalue, newvalue) 
-                        VALUES(%s, %s, %s, %s, %s, %s)""",
-                           (ticket_id, change_time, author, field, oldvalue, newvalue))
-
-def delete_ticket_change( comp, ticket_id, author, change_time, field):
-    """ removes a ticket change from the database """
-    if isinstance(change_time, datetime.datetime):
-        change_time = to_timestamp(change_time)
-    sql = """DELETE FROM ticket_change  
-             WHERE ticket=%s and author=%s and time=%s and field=%s""" 
-    dbhelper.execute_non_query(comp.env, sql, ticket_id, author, change_time, field)
 
 class TimeTrackingTicketObserver(Component):
     implements(ITicketChangeListener)
@@ -81,93 +104,36 @@ class TimeTrackingTicketObserver(Component):
         pass
 
     def watch_hours(self, ticket):
-        def readTicketValue(name, tipe, default=0):
-            if ticket.values.has_key(name):        
-                return tipe(ticket.values[name] or default)
-            else:
-                val = dbhelper.get_first_row(
-                    self.env, "SELECT * FROM ticket_custom where ticket=%s and name=%s", 
-                    ticket.id, name) 
-                if val:
-                    return tipe(val[2] or default)
-                return default
-
-        hours = readTicketValue("hours", convertfloat)
-        totalHours = readTicketValue("totalhours", convertfloat)
-
         ticket_id = ticket.id
-        cl = ticket.get_changelog()
-        
-        self.log.debug("found hours: "+str(hours ));
-        #self.log.debug("Dir_ticket:"+str(dir(ticket)))
-        #self.log.debug("ticket.values:"+str(ticket.values))
-        #self.log.debug("changelog:"+str(cl))
-    
-        most_recent_change = None
-        if cl:
-            most_recent_change = cl[-1];
-            change_time = most_recent_change[0]
-            author = most_recent_change[1]
-        else:
-            change_time = ticket.time_created
-            author = ticket.values["reporter"]
-
-        self.log.debug("Checking permissions")
-        perm = PermissionCache(self.env, author)
-        if not perm or not perm.has_permission("TIME_RECORD"):
-            self.log.debug("Skipping recording because no permission to affect time")
-            if hours != 0:
-                
-                tup = (ticket_id, author, change_time, "hours")
-                self.log.debug("deleting ticket change %s %s %s %s" % tup)
-                try:
-                    delete_ticket_change(self, ticket_id, author, change_time, "hours")
-                except Exception, e:
-                    self.log.exception("FAIL: %s" % e)
-                self.log.debug("hours change deleted")
-            return
-        self.log.debug("passed permissions check")
-
         @self.env.with_transaction()
         def fn(db):
-            ## SAVE estimated hour
-            estimatedhours = readTicketValue("estimatedhours", convertfloat)        
-            self.log.debug("found Estimated hours:"+str(estimatedhours))
-            save_ticket_change( db, ticket_id, author, change_time,
-                                "estimatedhours", DONTUPDATE, str(estimatedhours),
-                                self.log, True)
-            save_custom_field_value( db, ticket.id, "estimatedhours", str(estimatedhours))
-            #######################
-
-
-            ## If our hours changed 
-            if not hours == 0:                
-                newtotal = str(totalHours+hours)
-                save_ticket_change( db, ticket_id, author, change_time,
-                                    "hours", '0.0', str(hours), self.log)
-                save_ticket_change( db, ticket_id, author, change_time,
-                                    "totalhours", str(totalHours), str(newtotal), self.log)
-                save_custom_field_value( db, ticket_id, "hours", '0')
-                save_custom_field_value( db, ticket_id, "totalhours", str(newtotal) )            
-            ########################
-
-    # END of watch_hours
+            update_hours_to_floats(db, ticket_id)
+            save_custom_field_value( db, ticket_id, "hours", '0')
+            insert_totalhours_changes( db, ticket_id )
+            update_totalhours_custom ( db, ticket_id )
 
     def ticket_created(self, ticket):
         """Called when a ticket is created."""
-        self.watch_hours(ticket)
-                               
+        hours = convertfloat(ticket['hours'])
+        # makes the hours a ticket change like all the other hours records
+        if hours > 0:
+            self.watch_hours(ticket) # clears the hours
+            t = Ticket (self.env, ticket.id)
+            t['hours']=str(hours);
+            t.save_changes(ticket['reporter'])
 
     def ticket_changed(self, ticket, comment, author, old_values):
-        """Called when a ticket is modified.
-        
-        `old_values` is a dictionary containing the previous values of the
-        fields that have changed.
-        """
+        """Called when a ticket is modified."""
+        self.watch_hours(ticket)
+
+    def ticket_change_deleted(self, ticket, cdate, changes):
+        """called when a ticket change is deleted"""
         self.watch_hours(ticket)
 
     def ticket_deleted(self, ticket):
         """Called when a ticket is deleted."""
+        pass
+
 
 class TimeTrackingTicketValidator(Component):
     implements(ITicketManipulator)
@@ -185,6 +151,7 @@ class TimeTrackingTicketValidator(Component):
         detected. `field` can be `None` to indicate an overall problem with the
         ticket. Therefore, a return value of `[]` means everything is OK."""
         errors = []
+        #some european countries use , as the decimal separator
         try:
             convertfloat(ticket.values['hours'])
         except KeyError:

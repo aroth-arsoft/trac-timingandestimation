@@ -2,17 +2,14 @@ import re
 import dbhelper
 import time
 from tande_filters import *
-from reports_filter import *
-from blackmagic import *
 from ticket_daemon import *
-from ticket_webui import *
 from usermanual import *
-from ticket_policy import *
 from trac.ticket import ITicketChangeListener, Ticket
 from trac.core import *
 from trac.env import IEnvironmentSetupParticipant
 from trac.perm import IPermissionRequestor, PermissionSystem
 from webui import *
+from ticket_webui import *
 from query_webui import *
 from reportmanager import CustomReportManager
 from statuses import *
@@ -42,10 +39,6 @@ class TimeTrackingSetupParticipant(Component):
         estimatedhours.value = 0
         estimatedhours.label = Estimated Hours?
 
-        internal = checkbox
-        internal.value = 0
-        internal.label = Internal?
-
         """
     implements(IEnvironmentSetupParticipant)
     db_version_key = None
@@ -59,7 +52,7 @@ class TimeTrackingSetupParticipant(Component):
         # Setup logging
         self.statuses_key = 'T&E-statuses'
         self.db_version_key = 'TimingAndEstimationPlugin_Db_Version'
-        self.db_version = 8
+        self.db_version = 6
         # Initialise database schema version tracking.
         self.db_installed_version = dbhelper.get_system_value(self.env, \
             self.db_version_key) or 0
@@ -86,12 +79,14 @@ class TimeTrackingSetupParticipant(Component):
                 );"""
                 dbhelper.execute_non_query(self.env,  sql)
 
-
         if self.db_installed_version < 5:
+            # In this version we convert to using reportmanager.py
+            # The easiest migration path is to remove all the reports!!
+            # They will be added back in later but all custom reports will be lost (deleted)
             if dbhelper.db_table_exists(self.env, 'report_version'):
                 print "Dropping report_version table"
                 sql = "DELETE FROM report " \
-                    "WHERE author=%s AND id IN (SELECT report FROM report_version)"
+                      "WHERE author=%s AND id IN (SELECT report FROM report_version)"
                 dbhelper.execute_non_query(self.env, sql, 'Timing and Estimation Plugin')
 
                 sql = "DROP TABLE report_version"
@@ -99,24 +94,13 @@ class TimeTrackingSetupParticipant(Component):
 
         #version 6 upgraded reports
 
-
-        if self.db_installed_version < 7:
-            field_settings = "field settings"
-            self.config.set( field_settings, "fields", "billable, totalhours, hours, estimatedhours, internal" )
-            self.config.set( field_settings, "billable.permission", "TIME_VIEW:hide, TIME_RECORD:disable" )
-            self.config.set( field_settings, "hours.permission", "TIME_VIEW:remove, TIME_RECORD:disable" )
-            self.config.set( field_settings, "estimatedhours.permission", "TIME_RECORD:disable" )
-            self.config.set( field_settings, "internal.permission", "TIME_RECORD:hide")
-
-        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         # This statement block always goes at the end this method
         dbhelper.set_system_value(self.env, self.db_version_key, self.db_version)
         self.db_installed_version = self.db_version
-        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-            
+        self.log.debug( "T&E End DB Upgrade");
 
     def reports_need_upgrade(self):
+        self.log.debug("T&E BEGIN Reports need an upgrade check")
         mgr = CustomReportManager(self.env, self.log)
         db_reports = mgr.get_version_hash_by_group(CustomReportManager.TimingAndEstimationKey)
         py_reports = {}
@@ -130,10 +114,11 @@ class TimeTrackingSetupParticipant(Component):
         if len(diff) > 0:
             self.log.debug ("T&E needs upgrades for the following reports: %s" %
                             (diff, ))
+        self.log.debug("T&E END Reports need an upgrade check")
         return len(diff) > 0
 
     def do_reports_upgrade(self, force=False):
-        self.log.debug( "Beginning Reports Upgrade");
+        self.log.debug( "T&E Beginning Reports Upgrade");
         mgr = CustomReportManager(self.env, self.log)
         statuses = get_statuses(self.env)
         stat_vars = status_variables(statuses)
@@ -155,65 +140,57 @@ class TimeTrackingSetupParticipant(Component):
     def ticket_fields_need_upgrade(self):
         ticket_custom = "ticket-custom"
         return not ( self.config.get( ticket_custom, "totalhours" ) and \
-                         self.config.get( ticket_custom, "hours" ) and \
-                         self.config.get( ticket_custom, "estimatedhours") and \
-                         self.config.get( ticket_custom, "internal") and \
-                         "InternalTicketsPolicy" in self.config.getlist("trac", "permission_policies"))
+                     self.config.get( ticket_custom, "hours" ) and \
+                     self.config.get( ticket_custom, "estimatedhours"))
 
     def do_ticket_field_upgrade(self):
+        self.log.debug( "T&E Beginning Custom Field Upgrade");
         ticket_custom = "ticket-custom"
 
-        if not self.config.get(ticket_custom,"totalhours"):
-            self.config.set(ticket_custom,"totalhours", "text")
+        self.config.set(ticket_custom,"totalhours", "text")
+        if not self.config.get( ticket_custom, "totalhours.order") :
             self.config.set(ticket_custom,"totalhours.order", "4")
+        if not self.config.get( ticket_custom, "totalhours.value") :
             self.config.set(ticket_custom,"totalhours.value", "0")
+        if not self.config.get( ticket_custom, "totalhours.label") :
             self.config.set(ticket_custom,"totalhours.label", "Total Hours")
 
-
-        if not self.config.get(ticket_custom,"billable"):
-            self.config.set(ticket_custom,"billable", "checkbox")
+        self.config.set(ticket_custom,"billable", "checkbox")
+        if not self.config.get( ticket_custom, "billable.value") :
             self.config.set(ticket_custom,"billable.value", "1")
+        if not self.config.get( ticket_custom, "billable.order") :
             self.config.set(ticket_custom,"billable.order", "3")
+        if not self.config.get( ticket_custom, "billable.label") :
             self.config.set(ticket_custom,"billable.label", "Billable?")
 
-        if not self.config.get(ticket_custom,"hours"):
-            self.config.set(ticket_custom,"hours", "text")
+        self.config.set(ticket_custom,"hours", "text")
+        if not self.config.get( ticket_custom, "hours.value") :
             self.config.set(ticket_custom,"hours.value", "0")
+        if not self.config.get( ticket_custom, "hours.order") :
             self.config.set(ticket_custom,"hours.order", "2")
+        if not self.config.get( ticket_custom, "hours.label") :
             self.config.set(ticket_custom,"hours.label", "Add Hours to Ticket")
 
-        if not self.config.get(ticket_custom,"estimatedhours"):
-            self.config.set(ticket_custom,"estimatedhours", "text")
+        self.config.set(ticket_custom,"estimatedhours", "text")
+        if not self.config.get( ticket_custom, "estimatedhours.value") :
             self.config.set(ticket_custom,"estimatedhours.value", "0")
+        if not self.config.get( ticket_custom, "estimatedhours.order") :
             self.config.set(ticket_custom,"estimatedhours.order", "1")
+        if not self.config.get( ticket_custom, "estimatedhours.label") :
             self.config.set(ticket_custom,"estimatedhours.label", "Estimated Number of Hours")
 
-        if not self.config.get( ticket_custom, "internal"):
-            self.config.set(ticket_custom, "internal", "checkbox")
-            self.config.set(ticket_custom, "internal.value", "0")
-            self.config.set(ticket_custom, "internal.label", "Internal?")
-            self.config.set(ticket_custom,"internal.order", "5")
-
-        if "InternalTicketsPolicy" not in self.config.getlist("trac", "permission_policies"):
-            perms = ["InternalTicketsPolicy"]
-            other_policies = self.config.getlist("trac", "permission_policies")
-            if "DefaultPermissionPolicy" not in other_policies:
-                perms.append("DefaultPermissionPolicy")
-            perms.extend( other_policies )
-            self.config.set("trac", "permission_policies", ', '.join(perms))
-
         self.config.save();
+        self.log.debug( "T&E End Custom Field Upgrade");
 
     def needs_user_man(self):
-        maxversion = dbhelper.get_scalar(
-            self.env, "SELECT MAX(version) FROM wiki WHERE name like %s", 0,
-            user_manual_wiki_title)
+        maxversion = dbhelper.get_scalar(self.env, "SELECT MAX(version) FROM wiki WHERE name like %s", 0,
+                                         user_manual_wiki_title)
         if (not maxversion) or maxversion < user_manual_version:
             return True
         return False
 
     def do_user_man_update(self):
-
+        self.log.debug( "T&E Beginning User Manual Upgrade");
         when = int(time.time())
         sql = """
         INSERT INTO wiki (name,version,time,author,ipnr,text,comment,readonly)
@@ -224,6 +201,7 @@ class TimeTrackingSetupParticipant(Component):
                                    user_manual_version,
                                    when,
                                    user_manual_content)
+        self.log.debug( "T&E End User Manual Upgrade");
 
 
     def environment_needs_upgrade(self, db):
@@ -287,6 +265,8 @@ class TimeTrackingSetupParticipant(Component):
             return True
         sys_stats = get_statuses(self.env)
         s = s.split(',')
+        #self.env.log.debug('T&E: Statuses: stored:%r , sys:%r' %(s, sys_stats))
         sys_stats.symmetric_difference_update(s)
         sys_stats.difference_update(['', None])
+        #self.env.log.debug('T&E: Statuses: diff:%r ' %(sys_stats, ))
         return len(sys_stats) > 0

@@ -32,8 +32,7 @@
       <td colspan="2" >
             <div class="minorsection">
 	    <div class="label" >Billing Status:</div>
-              <label for="billable">Billable: </label>
-              <input id="billable" name="billable" type="checkbox" checked="true" /> 
+              <label for="billable">Billable: </label>              <input id="billable" name="billable" type="checkbox" checked="true" /> 
 
             &nbsp;&nbsp;|&nbsp;&nbsp;
               <label for="unbillable">Not Billable: </label>
@@ -97,15 +96,13 @@
   </py:for>
 
   </ul>
-
   <hr />
-  <div class="" py:if="is_time_admin">
   <label for="newbilltime">New bill time
     <span class="note">(leave blank for to set to now;  YYYY-MM-DD HH:MM:SS)</span>
   </label>
   <input type="text" value="" name="newbilltime" />
   <input type="submit" name="setbillingtime" value="Set Billing Time" onclick="return confirm('Are you sure that you want to create a billed date?')" />&nbsp;
-  </div>
+
 </div>
 </form>
 </body>

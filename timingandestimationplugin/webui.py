@@ -1,3 +1,4 @@
+
 from pkg_resources import resource_filename
 import re
 import time
@@ -6,14 +7,12 @@ import dbhelper
 from usermanual import *
 from trac.core import *
 from trac.web import IRequestHandler
-from trac.perm import IPermissionRequestor
 from trac.util import Markup
 from trac.web.chrome import add_stylesheet, add_script, \
      INavigationContributor, ITemplateProvider
 from trac.web.href import Href
 from reportmanager import CustomReportManager
 from statuses import get_statuses
-import datetime
 import trac.util.datefmt
 import reports
 
@@ -21,6 +20,8 @@ def strptime(date_string, format):
     return datetime.datetime(*(time.strptime(date_string, format)[0:6]))
 
 #get_statuses = api.get_statuses
+
+
 validTimeFormats=[
     '%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %I:%M:%S.%f %p',
     '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %I:%M:%S %p',
@@ -40,6 +41,7 @@ validTimeFormats=[
     '%Y.%m.%d %H', '%Y.%m.%d %I %p',
     '%Y.%m.%d',
     ]
+
 def parsetime(val, tzinfo=trac.util.datefmt.to_datetime(None).tzinfo):
     if not val: return None
     val = val.strip()
@@ -53,14 +55,11 @@ def parsetime(val, tzinfo=trac.util.datefmt.to_datetime(None).tzinfo):
 
 
 class TimingEstimationAndBillingPage(Component):
-    implements(IPermissionRequestor, INavigationContributor, IRequestHandler, ITemplateProvider)
+    implements(INavigationContributor, IRequestHandler, ITemplateProvider)
 
     def __init__(self):
-        pass
-
-    # IPermissionRequestor methods 
-    def get_permission_actions(self): 
-        return ["TIME_VIEW", "TIME_RECORD", ("TIME_ADMIN", ["TIME_RECORD", "TIME_VIEW"])] 
+        self.BILLING_PERMISSION = self.env.config.get('timingandestimation', 'billing_permission') or 'REPORT_VIEW'
+        self.log.debug('TimingAndEstimation billing_permission: %s' % self.BILLING_PERMISSION)
 
     def set_bill_date(self, username="Timing and Estimation Plugin",  when=None):
         now = trac.util.datefmt.to_datetime(None)#get now
@@ -70,7 +69,6 @@ class TimingEstimationAndBillingPage(Component):
 
         strwhen = "%#04d-%#02d-%#02d %#02d:%#02d:%#02d" % \
                 (when.year, when.month, when.day, when.hour,when.minute, when.second)
-
         sql = """
         INSERT INTO bill_date (time, set_when, str_value)
         VALUES (%s, %s, %s)
@@ -89,10 +87,10 @@ class TimingEstimationAndBillingPage(Component):
 
     def get_navigation_items(self, req):
         url = req.href.billing()
-        if req.perm.has_permission("TIME_VIEW"):
+        if req.perm.has_permission(self.BILLING_PERMISSION):
             yield 'mainnav', "billing", \
-                Markup('<a href="%s">%s</a>' % \
-                           (url , "Time Reports"))
+                  Markup('<a href="%s">%s</a>' % \
+                         (url , "Management"))
 
     # IRequestHandler methods
     def set_request_billing_dates(self, data):
@@ -106,29 +104,31 @@ class TimingEstimationAndBillingPage(Component):
         if rs:
             for (value, text) in rs.rows:
                 billing_info = {'text':text , 'value':value*1000*1000}
-                billing_dates.extend([billing_info]) 
+                billing_dates.extend([billing_info])
         #self.log.debug("bill-dates: %s"%billing_dates)
         data['billing_info']["billdates"] = billing_dates
 
+
     def match_request(self, req):
-        val = re.search('/billing$', req.path_info)
-        return val and val.start() == 0
+        matches = re.search('^/billing$', req.path_info)
+        self.log.debug('T&E matched: %s  %s' % (req.path_info, matches))
+        #if matches: req.perm.require(self.BILLING_PERMISSION)
+        return matches
 
     def process_request(self, req):
+        req.perm.require(self.BILLING_PERMISSION)
         messages = []
-        req.perm.require("TIME_VIEW")
+
         def addMessage(s):
             messages.extend([s]);
 
         if req.method == 'POST':
-            req.perm.require("TIME_ADMIN")
             if req.args.has_key('setbillingtime'):
                 self.set_bill_date(req.authname, req.args.get('newbilltime'))
                 addMessage("All tickets last bill date updated")
 
         mgr = CustomReportManager(self.env, self.log)
         data = {};
-        data["is_time_admin"] = req.perm.has_permission("TIME_ADMIN")
         data["statuses"] = get_statuses(self.env)
         data["reports"] = mgr.get_reports_by_group(CustomReportManager.TimingAndEstimationKey);
         # Handle pulling in report_descriptions
