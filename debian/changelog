@@ -1,3 +1,9 @@
+trac-timingandestimation (1.4.8+svn16171~aroth1) yakkety; urgency=medium
+
+  * new upstream version 1.4.8
+
+ -- Andreas Roth <aroth@arsoft-online.com>  Mon, 02 Jan 2017 14:15:31 +0100
+
 trac-timingandestimation (1.3.7b+svn13939~aroth~ppa4) xenial; urgency=medium
 
   * fixed missing build depends
