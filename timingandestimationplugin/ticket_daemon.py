@@ -8,12 +8,14 @@ def identity(x):
 
 def convertfloat(x):
     "some european countries use , as the decimal separator"
+    if not x:
+        return 0.0
     if isinstance(x, float) or isinstance(x, int):
         return x
     x = str(x).strip()
     if len(x) > 0:
         return float(x.replace(',','.'))
-    else: 
+    else:
         return 0.0
 
 
@@ -54,7 +56,7 @@ def update_totalhours_custom( db, ticket_id):
     cursor = db.cursor()
     sumSql = """
        (SELECT SUM( CASE WHEN newvalue = '' OR newvalue IS NULL THEN 0
-                         ELSE CAST( newvalue AS DECIMAL ) END ) as total 
+                         ELSE CAST( newvalue AS DECIMAL(10,2) ) END ) as total 
           FROM ticket_change
          WHERE ticket=%s and field='hours')  """
     cursor.execute("UPDATE ticket_custom SET value="+sumSql+
@@ -74,13 +76,13 @@ def insert_totalhours_changes( db, ticket_id):
        INSERT INTO ticket_change (ticket, author, time, field, oldvalue, newvalue)
        SELECT ticket, author, time, 'totalhours',  
                (SELECT SUM( CASE WHEN newvalue = '' OR newvalue IS NULL THEN 0
-                           ELSE CAST( newvalue AS DECIMAL ) END ) as total
+                           ELSE CAST( newvalue AS DECIMAL(10,2) ) END ) as total
                FROM ticket_change as guts 
                WHERE guts.ticket = ticket_change.ticket AND guts.field='hours'
                  AND guts.time < ticket_change.time
               ) as oldvalue, 
               (SELECT SUM( CASE WHEN newvalue = '' OR newvalue IS NULL THEN 0
-                           ELSE CAST( newvalue AS DECIMAL ) END ) as total
+                           ELSE CAST( newvalue AS DECIMAL(10,2) ) END ) as total
                FROM ticket_change as guts 
                WHERE guts.ticket = ticket_change.ticket AND guts.field='hours'
                  AND guts.time <= ticket_change.time
@@ -105,8 +107,7 @@ class TimeTrackingTicketObserver(Component):
 
     def watch_hours(self, ticket):
         ticket_id = ticket.id
-        @self.env.with_transaction()
-        def fn(db):
+        with self.env.db_transaction as db:
             update_hours_to_floats(db, ticket_id)
             save_custom_field_value( db, ticket_id, "hours", '0')
             insert_totalhours_changes( db, ticket_id )

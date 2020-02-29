@@ -5,7 +5,6 @@
       xmlns:py="http://genshi.edgewall.org/"
       xmlns:xi="http://www.w3.org/2001/XInclude">
   <xi:include href="layout.html" />
-  <xi:include href="macros.html" />
 
       <head>
 	<title>Time Tracking Management for Trac.11</title>
@@ -27,6 +26,7 @@
     </py:for>
   </div>
 
+  <h1>Report Criteria</h1>
   <table border="0" cellspacing="0" cellpadding="0" class="minorsection">
     <tr>
       <td colspan="2" >
@@ -39,18 +39,20 @@
               <input id="unbillable" name="unbillable" type="checkbox"  /> 
             </div>
 
-		  <div class="minorsection">
-		    <div class="label" >Status:</div>
-		    <py:for each="status in statuses" >
-		      <label for="$status">${status.capitalize()}: </label>
-		      <input id="$status" name="$status" type="checkbox" checked="true" /> 
-		    </py:for>
-		    <script>
-		      <py:for each="status in statuses" >
-			   addBillingField("$status", "checkbox", true);
-		      </py:for>
-		    </script>
-		  </div>
+	    <div class="minorsection">
+	      <div class="label" >Status:</div>
+	      <py:for each="status in statuses" >
+                <?python statusid = status.replace('>','').replace('<','') ?>
+		<label for="$statusid">${status.capitalize()}: </label>
+		<input id="$statusid" name="$statusid" type="checkbox" checked="true" /> 
+	      </py:for>
+	      <script>
+	       <py:for each="status in statuses" >
+               <?python statusid = status.replace('>','').replace('<','') ?>
+               addBillingField("$statusid", "checkbox", true);
+	       </py:for>
+	      </script>
+	    </div>
 
       </td>
     </tr><tr class="minorsection">
@@ -81,9 +83,10 @@
       </td>
     </tr>
   </table>
-  <ul id="reportlinks">
+
   <py:for each="key in reports" >
-    <li>${reports[key]["title"]}
+    <div>
+      <h2 class="title">${reports[key]["title"]}</h2>
       <h6 class="description">${reports[key]["description"]}</h6>
       <ul>
         <py:for each="report in reports[key]['reports']">
@@ -92,11 +95,9 @@
           </a></li>     
        </py:for>
       </ul>
-    </li>
+    </div>
   </py:for>
 
-  </ul>
-  <hr />
   <label for="newbilltime">New bill time
     <span class="note">(leave blank for to set to now;  YYYY-MM-DD HH:MM:SS)</span>
   </label>

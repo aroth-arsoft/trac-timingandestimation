@@ -16,6 +16,8 @@ from statuses import *
 from reports import all_reports
 from stopwatch import *
 
+from pkg_resources import parse_version
+
 ## report columns
 ## id|author|title|query|description
 
@@ -192,10 +194,17 @@ class TimeTrackingSetupParticipant(Component):
     def do_user_man_update(self):
         self.log.debug( "T&E Beginning User Manual Upgrade");
         when = int(time.time())
-        sql = """
-        INSERT INTO wiki (name,version,time,author,ipnr,text,comment,readonly)
-        VALUES ( %s, %s, %s, 'Timing and Estimation Plugin', '127.0.0.1', %s,'',0)
-        """
+
+        if parse_version(trac.__version__) > parse_version('1.3'):
+            sql = """
+            INSERT INTO wiki (name,version,time,author,text,comment,readonly)
+            VALUES ( %s, %s, %s, 'Timing and Estimation Plugin', %s,'',0)
+            """
+        else:
+            sql = """
+            INSERT INTO wiki (name,version,time,author,ipnr,text,comment,readonly)
+            VALUES ( %s, %s, %s, 'Timing and Estimation Plugin', '127.0.0.1', %s,'',0)
+            """
         dbhelper.execute_non_query(self.env, sql,
                                    user_manual_wiki_title,
                                    user_manual_version,
@@ -204,7 +213,7 @@ class TimeTrackingSetupParticipant(Component):
         self.log.debug( "T&E End User Manual Upgrade");
 
 
-    def environment_needs_upgrade(self, db):
+    def environment_needs_upgrade(self, db=None):
         """Called when Trac checks whether the environment needs to be upgraded.
 
         Should return `True` if this participant needs an upgrade to be
@@ -225,7 +234,7 @@ class TimeTrackingSetupParticipant(Component):
         for i in res: r |= i
         return r
 
-    def upgrade_environment(self, db):
+    def upgrade_environment(self, db=None):
         """Actually perform an environment upgrade.
 
         Implementations of this method should not commit any database

@@ -7,7 +7,7 @@ PACKAGE = 'timingandestimationplugin'
 setup(name=PACKAGE,
       description='Plugin to make Trac support time estimation and tracking',
       keywords='trac plugin estimation timetracking',
-      version='1.4.8',
+      version='1.6.0',
       url='http://www.trac-hacks.org/wiki/TimingAndEstimationPlugin',
       license='http://www.opensource.org/licenses/mit-license.php',
       author='Russ Tyndall at Acceleration.net',
@@ -30,6 +30,9 @@ setup(name=PACKAGE,
 ## trac-hacks user: bobbysmith007
 
 ##
+
+## lkraav
+## Upgrade db interface for v 1.3
 
 ## Alessio Massaro
 ## trac-hacks user: masariello
